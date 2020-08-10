@@ -115,7 +115,7 @@ class XYGenerator {
   
   int external_clock_stabilization_counter_;
   
-  DISALLOW_COPY_AND_ASSIGN(XYGenerator);
+  //DISALLOW_COPY_AND_ASSIGN(XYGenerator);
 };
 
 }  // namespace marbles

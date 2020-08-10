@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.0)
 
-include(${CMAKE_CURRENT_SOURCE_DIR}/../../max-api/script/max-pretarget.cmake)
+include(${CMAKE_CURRENT_SOURCE_DIR}/../../min-api/script/min-pretarget.cmake)
 
 include_directories( 
 	"${C74_INCLUDES}"
@@ -38,4 +38,4 @@ add_library(
 
 target_link_libraries(${PROJECT_NAME} MIMarblesLib)
 
-include(${CMAKE_CURRENT_SOURCE_DIR}/../../max-api/script/max-posttarget.cmake)
+include(${CMAKE_CURRENT_SOURCE_DIR}/../../min-api/script/min-posttarget.cmake)

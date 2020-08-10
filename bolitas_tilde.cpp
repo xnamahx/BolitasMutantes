@@ -169,8 +169,7 @@ static const marbles::Ratio y_divider_ratios[] = {
 };
 
 struct t_bolitas {
-	/*t_object  x_obj;*/
-	t_pxobject x_obj;
+	t_pxobject m_obj;
 
 	marbles::RandomGenerator random_generator;
 	marbles::RandomStream random_stream;
@@ -178,14 +177,7 @@ struct t_bolitas {
 	marbles::XYGenerator xy_generator;
 	marbles::NoteFilter note_filter;
 	marbles::ClockSource x_clock_source;
-	// State
-	/*BooleanTrigger tDejaVuTrigger;
-	BooleanTrigger xDejaVuTrigger;
-	BooleanTrigger tModeTrigger;
-	BooleanTrigger xModeTrigger;
-	BooleanTrigger tRangeTrigger;
-	BooleanTrigger xRangeTrigger;
-	BooleanTrigger externalTrigger;*/
+
 	bool t_deja_vu;
 	bool x_deja_vu;
 	int t_mode;
@@ -227,9 +219,12 @@ struct t_bolitas {
 	double f_x_spread_input;
 
 	double f_t_jitter;
-	double f_x_steps;
 
 	int sampleRate;
+
+	marbles::GroupSettings xSettings;
+	marbles::GroupSettings ySettings;
+
 
 	void onReset() {
 		t_deja_vu = false;
@@ -238,6 +233,8 @@ struct t_bolitas {
 		x_mode = 0;
 		t_range = 1;
 		x_range = 2;
+		ySettings.voltage_range = (marbles::VoltageRange) x_range;
+		
 		external = false;
 		f_t_clock_input_patched = false;
 		f_x_clock_input_patched = false;
@@ -288,44 +285,42 @@ struct t_bolitas {
 
 		t_generator.Process(t_external_clock, t_clocks, ramps, gates, BLOCK_SIZE);
 
-		marbles::GroupSettings x;
-		x.control_mode = (marbles::ControlMode) x_mode;
-		x.voltage_range = (marbles::VoltageRange) x_range;
+		xSettings.control_mode = (marbles::ControlMode) x_mode;
 		// TODO Fix the scaling
 		double note_cv = (f_x_spread_input / 5.f);
 		double u = note_filter.Process(0.5f * (note_cv + 1.f));
-		x.register_mode = external;
-		x.register_value = u;
+		xSettings.register_mode = external;
+		xSettings.register_value = u;
 
 		double x_spread = constrain(f_x_spread, 0.f, 1.f);
-		x.spread = x_spread;
+		xSettings.spread = x_spread;
 		double x_bias = constrain(f_x_bias, 0.f, 1.f);
-		x.bias = x_bias;
-		double x_steps = constrain(f_x_steps, 0.f, 1.f);
-		x.steps = x_steps;
-		x.deja_vu = x_deja_vu ? f_deja_vu : 0.f;
-		x.length = deja_vu_length;
-		x.ratio.p = 1;
-		x.ratio.q = 1;
-		x.scale_index = x_scale;
+		xSettings.bias = x_bias;
 
-		marbles::GroupSettings y;
-		y.control_mode = marbles::CONTROL_MODE_IDENTICAL;
+
+		xSettings.deja_vu = x_deja_vu ? f_deja_vu : 0.f;
+		xSettings.length = deja_vu_length;
+		xSettings.ratio.p = 1;
+		xSettings.ratio.q = 1;
+		xSettings.scale_index = x_scale;
+
+		ySettings.control_mode = marbles::CONTROL_MODE_IDENTICAL;
+
 		// TODO
-		y.voltage_range = (marbles::VoltageRange) x_range;
-		y.register_mode = false;
-		y.register_value = 0.0f;
+		ySettings.register_mode = false;
+		ySettings.register_value = 0.0f;
+
 		// TODO
-		y.spread = x_spread;
-		y.bias = x_bias;
-		y.steps = x_steps;
-		y.deja_vu = 0.0f;
-		y.length = 1;
+		ySettings.spread = x_spread;
+		ySettings.bias = x_bias;
+		ySettings.steps = xSettings.steps;
+		ySettings.deja_vu = 0.0f;
+		ySettings.length = 1;
 
-		y.ratio = y_divider_ratios[y_divider_index];
-		y.scale_index = x_scale;
+		ySettings.ratio = y_divider_ratios[y_divider_index];
+		ySettings.scale_index = x_scale;
 
-		xy_generator.Process(x_clock_source, x, y, xy_clocks, ramps, voltages, BLOCK_SIZE);
+		xy_generator.Process(x_clock_source, xSettings, ySettings, xy_clocks, ramps, voltages, BLOCK_SIZE);
 	}
 };
 
@@ -362,10 +357,6 @@ void bolitas_perform64(t_bolitas* self, t_object* dsp64, double** ins, long numi
 
 void* bolitas_new(void) {
 	t_bolitas* self = (t_bolitas*) object_alloc(this_class);
-	self->random_generator.Init(1);
-	self->random_stream.Init(&self->random_generator);
-	self->note_filter.Init();
-	self->onReset();
 
 	dsp_setup((t_pxobject*)self, 0);
 	outlet_new(self, "signal");
@@ -375,6 +366,11 @@ void* bolitas_new(void) {
 	outlet_new(self, "signal");
 	outlet_new(self, "signal");
 	outlet_new(self, "signal");
+
+	self->random_generator.Init(1);
+	self->random_stream.Init(&self->random_generator);
+	self->note_filter.Init();
+	self->onReset();
 
 	return self;
 }
@@ -451,6 +447,10 @@ void bolitas_xclockexternalinput(t_bolitas *x, double f)
 void bolitas_xclocksourceinternal(t_bolitas *x, double f)
 {
 	x->x_clock_source_internal = (int) f;
+	// Set up XYGenerator
+	x->x_clock_source = (marbles::ClockSource) x->x_clock_source_internal;
+	if (x->f_x_clock_input_patched)
+		x->x_clock_source = marbles::CLOCK_SOURCE_EXTERNAL;
 }
 
 
@@ -483,12 +483,9 @@ void bolitas_fdejavu(t_bolitas *x, double f)
 
 void bolitas_dejavulength(t_bolitas *x, double f)
 {
-	x->f_deja_vu_length = constrain(f, 0.f, 1.f);
-	float deja_vu_length_index = x->f_deja_vu_length * (sizeof(loop_length) - 1);
-	x->deja_vu_length = loop_length[(int) roundf(deja_vu_length_index)];
 
-
-		x->t_generator.set_length(x->deja_vu_length);
+	x->deja_vu_length = (int) roundf(f);
+	x->t_generator.set_length(x->deja_vu_length);
 
 }
 
@@ -516,7 +513,8 @@ void bolitas_trange(t_bolitas *x, double f)
 
 void bolitas_xrange(t_bolitas *x, double f)
 {
-	x->x_range = (int) f;
+	x->xSettings.voltage_range = (marbles::VoltageRange) (int) f;
+
 }
 
 void bolitas_pws(t_bolitas *x, double f)
@@ -563,7 +561,7 @@ void bolitas_jitter(t_bolitas *x, double f)
 
 void bolitas_steps(t_bolitas *x, double f)
 {
-	x->f_x_steps = f;
+	x->xSettings.steps = constrain(f, 0.f, 1.f);
 }
 
 
